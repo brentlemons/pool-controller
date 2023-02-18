@@ -1,8 +1,7 @@
 {
   "device-name": "",
   "aws-endpoint": "",
-  "wifi": {
-    "ssid": "",
-    "password": ""
-  }
+  "aws-endpoint-port": 8883,
+  "wifi-ssid": "",
+  "wifi-password": ""
 }
