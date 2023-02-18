@@ -8,6 +8,7 @@
 
 #define MQTT_KEEP_ALIVE (900)
 #define MQTT_TIMEOUT    (900)
+#define NUMBER_OF_SPEEDS (8)
 
 /// @brief 
 struct Configuration {
@@ -18,9 +19,38 @@ struct Configuration {
   char wifiPassword[32];
 };
 
+typedef struct Speed {
+  char name[6];
+  bool inp1;
+  bool inp2;
+  bool inp3;
+} Speed;
+
+// enum timerSpeed { // based on Hayward IS3206VSP3 Rev-C Instruction Manual
+//   ONE,    // INP1 off, INP2 off, INP3 off
+//   TWO,    // INP1 on,  INP2 off, INP3 off
+//   THREE,  // INP1 off, INP2 on,  INP3 off
+//   FOUR,   // INP1 on,  INP2 on,  INP3 off
+//   FIVE,   // INP1 off, INP2 off, INP3 on
+//   SIX,    // INP1 on,  INP2 off, INP3 on
+//   SEVEN,  // INP1 off, INP2 on,  INP3 on
+//   EIGHT   // INP1 on,  INP2 on,  INP3 on
+// };
+
+// Globals
 Configuration config;
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient client(net);
+Speed speeds[NUMBER_OF_SPEEDS] = { // based on Hayward IS3206VSP3 Rev-C Instruction Manual
+  { "ONE",   false, false, false },
+  { "TWO",   true,  false, false },
+  { "THREE", false, true,  false },
+  { "FOUR",  true,  true,  false },
+  { "FIVE",  false, false, true },
+  { "SIX",   true,  false, true },
+  { "SEVEN", false, true,  true },
+  { "EIGHT", true,  true,  true }
+};
 
 // Function Declarations
 Configuration loadConfig();
@@ -46,12 +76,14 @@ void setup() {
   config = loadConfig();
   connectWiFi(config.wifiSsid, config.wifiPassword);
   connectAWS(config.awsEndpoint, config.awsEndpointPort);
+  delay(1500);
 }
 
 // Do what you do...
 void loop() {
 
   if (!client.connected()) {
+    Serial.println("connecting...");
     reconnect(config.deviceName);
   }
 
@@ -186,9 +218,9 @@ void reconnect(const char* deviceName) {
     if (client.connect(deviceName)) {
       Serial.println("connected");
       // Once connected, publish an announcement...
-      client.publish(AWS_IOT_PUBLISH_TOPIC, "hello world");
-      
+      // client.publish(AWS_IOT_PUBLISH_TOPIC, "hello world");
       // ... and resubscribe
+      client.subscribe(AWS_IOT_SUBSCRIBE_TOPIC);
       client.subscribe(TOPIC_ACTION_SET_SPEED);
     } else {
       Serial.print("failed, rc=");
@@ -201,8 +233,8 @@ void reconnect(const char* deviceName) {
   }
 }
 
-void publishMessage()
-{
+void publishMessage() {
+  Serial.println("publishing...");
   StaticJsonDocument<200> doc;
   doc["time"] = millis();
   doc["sensor_a0"] = analogRead(0);
@@ -217,18 +249,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print(topic);
   Serial.print("] ");
 
-  if (strcmp(topic, TOPIC_ACTION_SET_SPEED) == 0) {
-    Serial.printf("Received %s message!", TOPIC_ACTION_SET_SPEED);
-  } else {
-    Serial.printf("Received message on topic %s", topic);
-  }
-
-
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println();
-
   StaticJsonDocument<200> doc;
 
   // Deserialize the JSON document
@@ -241,14 +261,28 @@ void callback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  // Fetch values.
-  //
-  // Most of the time, you can rely on the implicit casts.
-  // In other case, you can do doc["time"].as<long>();
-  const char* message = doc["message"];
-
-  Serial.print("message --> ");
-  Serial.println(message);
+  if (strcmp(topic, TOPIC_ACTION_SET_SPEED) == 0) {
+    Serial.printf("Received %s message!", TOPIC_ACTION_SET_SPEED);
+    if (doc["speed"]) {
+      const char* speed = doc["speed"];
+      Serial.printf("speed: %s\n", speed);
+      for (int i = 0; i < NUMBER_OF_SPEEDS; i++) {
+        if (strcmp(speed, speeds[i].name) == 0) {
+          Serial.printf("FOUND SPEED %s: INP1 - %d, INP2 - %d, INP3 - %d\n", 
+            speeds[i].name,
+            speeds[i].inp1, 
+            speeds[i].inp2, 
+            speeds[i].inp3
+          );
+          break;
+        }
+      }
+    } else {
+      Serial.println("No speed");
+    }
+  } else {
+    Serial.printf("Received message on topic %s", topic);
+  }
 
 }
 
