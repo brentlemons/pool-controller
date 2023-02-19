@@ -30,6 +30,8 @@ typedef struct Speed {
 Configuration config;
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient client(net);
+Speed currentSpeed;
+bool currentPower;
 
 const int INP1 = 19;
 const int INP2 = 16;
@@ -57,6 +59,8 @@ void callback(char* topic, byte* payload, unsigned int length);
 void initInp(int inp);
 bool getInpState(int inp);
 void setInpState(int inp, bool state);
+void setSpeed(Speed speed);
+void setPower(bool power);
 void flipInp(int inp);
 void flipOnInp(int inp);
 void flipOffInp(int inp);
@@ -82,6 +86,12 @@ void setup() {
   initInp(INP3);
   initInp(INP4);
 
+  currentPower = false;
+  currentSpeed = speeds[0];
+
+  setSpeed(currentSpeed);
+  setPower(currentPower);
+
   config = loadConfig();
   connectWiFi(config.wifiSsid, config.wifiPassword);
   connectAWS(config.awsEndpoint, config.awsEndpointPort);
@@ -98,7 +108,6 @@ void loop() {
 
   client.loop();  
 }
-
 
 Configuration loadConfig() {
   Configuration config;
@@ -229,7 +238,8 @@ void reconnect(const char* deviceName) {
       // Once connected, publish an announcement...
       // client.publish(AWS_IOT_PUBLISH_TOPIC, "hello world");
       // ... and resubscribe
-      client.subscribe(AWS_IOT_SUBSCRIBE_TOPIC);
+      client.subscribe(TOPIC_ACTION_POWER_ON);
+      client.subscribe(TOPIC_ACTION_POWER_OFF);
       client.subscribe(TOPIC_ACTION_SET_SPEED);
     } else {
       Serial.print("failed, rc=");
@@ -283,9 +293,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
             speeds[i].inp2, 
             speeds[i].inp3
           );
-          setInpState(INP1, speeds[i].inp1);
-          setInpState(INP2, speeds[i].inp2);
-          setInpState(INP3, speeds[i].inp3);
+          setSpeed(speeds[i]);
           break;
         }
       }
@@ -295,23 +303,15 @@ void callback(char* topic, byte* payload, unsigned int length) {
   } else if (strcmp(topic, TOPIC_ACTION_POWER_ON) == 0) {
     Serial.printf("Received %s message!", TOPIC_ACTION_POWER_ON);
     if (doc["timestamp"]) {
-      const char* speed = doc["speed"];
-      Serial.printf("speed: %s\n", speed);
-      for (int i = 0; i < NUMBER_OF_SPEEDS; i++) {
-        if (strcmp(speed, speeds[i].name) == 0) {
-          Serial.printf("FOUND SPEED %s: INP1 - %d, INP2 - %d, INP3 - %d\n", 
-            speeds[i].name,
-            speeds[i].inp1, 
-            speeds[i].inp2, 
-            speeds[i].inp3
-          );
-          break;
-        }
-      }
-    } else {
-      Serial.println("No speed");
+      const char* speed = doc["timestamp"];
+      setPower(true);
     }
   } else if (strcmp(topic, TOPIC_ACTION_POWER_OFF) == 0) {
+    Serial.printf("Received %s message!", TOPIC_ACTION_POWER_OFF);
+    if (doc["timestamp"]) {
+      const char* speed = doc["timestamp"];
+      setPower(false);
+    }
   } else {
     Serial.printf("Received message on topic %s", topic);
   }
@@ -329,6 +329,16 @@ bool getInpState(int inp) {
 
 void setInpState(int inp, bool state) {
   digitalWrite(inp, !state);
+}
+
+void setSpeed(Speed speed) {
+  setInpState(INP1, speed.inp1);
+  setInpState(INP2, speed.inp2);
+  setInpState(INP3, speed.inp3);
+}
+
+void setPower(bool power) {
+  setInpState(INP4, power);
 }
 
 void flipInp(int inp) {
