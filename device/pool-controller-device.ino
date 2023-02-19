@@ -26,30 +26,25 @@ typedef struct Speed {
   bool inp3;
 } Speed;
 
-// enum timerSpeed { // based on Hayward IS3206VSP3 Rev-C Instruction Manual
-//   ONE,    // INP1 off, INP2 off, INP3 off
-//   TWO,    // INP1 on,  INP2 off, INP3 off
-//   THREE,  // INP1 off, INP2 on,  INP3 off
-//   FOUR,   // INP1 on,  INP2 on,  INP3 off
-//   FIVE,   // INP1 off, INP2 off, INP3 on
-//   SIX,    // INP1 on,  INP2 off, INP3 on
-//   SEVEN,  // INP1 off, INP2 on,  INP3 on
-//   EIGHT   // INP1 on,  INP2 on,  INP3 on
-// };
-
 // Globals
 Configuration config;
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient client(net);
+
+const int INP1 = 19;
+const int INP2 = 16;
+const int INP3 = 17;
+const int INP4 = 21;
+
 Speed speeds[NUMBER_OF_SPEEDS] = { // based on Hayward IS3206VSP3 Rev-C Instruction Manual
-  { "ONE",   false, false, false },
-  { "TWO",   true,  false, false },
-  { "THREE", false, true,  false },
-  { "FOUR",  true,  true,  false },
-  { "FIVE",  false, false, true },
-  { "SIX",   true,  false, true },
-  { "SEVEN", false, true,  true },
-  { "EIGHT", true,  true,  true }
+  { "ONE",   false, false, false }, // INP1 off, INP2 off, INP3 off
+  { "TWO",   true,  false, false }, // INP1 on,  INP2 off, INP3 off
+  { "THREE", false, true,  false }, // INP1 off, INP2 on,  INP3 off
+  { "FOUR",  true,  true,  false }, // INP1 on,  INP2 on,  INP3 off
+  { "FIVE",  false, false, true },  // INP1 off, INP2 off, INP3 on
+  { "SIX",   true,  false, true },  // INP1 on,  INP2 off, INP3 on
+  { "SEVEN", false, true,  true },  // INP1 off, INP2 on,  INP3 on
+  { "EIGHT", true,  true,  true }   // INP1 on,  INP2 on,  INP3 on
 };
 
 // Function Declarations
@@ -59,8 +54,16 @@ bool connectAWS(const char* awsEndpoint, int awsEndpointPort);
 void reconnect(const char* deviceName);
 void publishMessage();
 void callback(char* topic, byte* payload, unsigned int length);
+void initInp(int inp);
+bool getInpState(int inp);
+void setInpState(int inp, bool state);
+void flipInp(int inp);
+void flipOnInp(int inp);
+void flipOffInp(int inp);
 
 // The MQTT topics that this device should publish/subscribe
+#define TOPIC_ACTION_POWER_ON   "action/power/on"
+#define TOPIC_ACTION_POWER_OFF  "action/power/off"
 #define TOPIC_ACTION_SET_SPEED  "action/speed"
 #define AWS_IOT_PUBLISH_TOPIC   "esp32/pub"
 #define AWS_IOT_SUBSCRIBE_TOPIC "esp32/sub"
@@ -72,6 +75,12 @@ void setup() {
     Serial.println("Failed to mount file system");
     return;
   }
+
+  // Initialize the relay switches
+  initInp(INP1);
+  initInp(INP2);
+  initInp(INP3);
+  initInp(INP4);
 
   config = loadConfig();
   connectWiFi(config.wifiSsid, config.wifiPassword);
@@ -274,15 +283,62 @@ void callback(char* topic, byte* payload, unsigned int length) {
             speeds[i].inp2, 
             speeds[i].inp3
           );
+          setInpState(INP1, speeds[i].inp1);
+          setInpState(INP2, speeds[i].inp2);
+          setInpState(INP3, speeds[i].inp3);
           break;
         }
       }
     } else {
       Serial.println("No speed");
     }
+  } else if (strcmp(topic, TOPIC_ACTION_POWER_ON) == 0) {
+    Serial.printf("Received %s message!", TOPIC_ACTION_POWER_ON);
+    if (doc["timestamp"]) {
+      const char* speed = doc["speed"];
+      Serial.printf("speed: %s\n", speed);
+      for (int i = 0; i < NUMBER_OF_SPEEDS; i++) {
+        if (strcmp(speed, speeds[i].name) == 0) {
+          Serial.printf("FOUND SPEED %s: INP1 - %d, INP2 - %d, INP3 - %d\n", 
+            speeds[i].name,
+            speeds[i].inp1, 
+            speeds[i].inp2, 
+            speeds[i].inp3
+          );
+          break;
+        }
+      }
+    } else {
+      Serial.println("No speed");
+    }
+  } else if (strcmp(topic, TOPIC_ACTION_POWER_OFF) == 0) {
   } else {
     Serial.printf("Received message on topic %s", topic);
   }
 
 }
 
+void initInp(int inp) {
+  pinMode(inp, OUTPUT);
+  digitalWrite(inp, HIGH);
+}
+
+bool getInpState(int inp) {
+  digitalRead(inp);
+}
+
+void setInpState(int inp, bool state) {
+  digitalWrite(inp, !state);
+}
+
+void flipInp(int inp) {
+  digitalWrite(inp, !getInpState(inp));
+}
+
+void flipOnInp(int inp) {
+  digitalWrite(inp, LOW);
+}
+
+void flipOffInp(int inp) {
+  digitalWrite(inp, HIGH);
+}
